@@ -8,6 +8,7 @@ public class PlayerController : MonoBehaviour
     public float speed = 0.5f;
     private Vector3 target;
     public Tilemap treeTileMap;
+    public Tilemap stoneTileMap;
     public TileBase emptyTile; 
     private Vector3Int lastHoveredTile;
     private Color originalColor = Color.white;
@@ -38,6 +39,17 @@ public class PlayerController : MonoBehaviour
             ResetTreeHighlight();
         }
 
+
+        // Stone highlighting
+        if (stoneTileMap.HasTile(hoveredTilePosition))
+        {
+            HighlightStone(hoveredTilePosition);
+            lastHoveredTile = hoveredTilePosition;
+        }
+        else{
+            ResetStoneHighlight();
+        }
+
         // Only process clicks if not already performing an action
         if (!isPerformingAction)
         {
@@ -53,8 +65,12 @@ public class PlayerController : MonoBehaviour
                 { 
                     StartCoroutine(MoveAndChopTree(hoveredTilePosition)); 
                 }
+                else if (stoneTileMap.HasTile(hoveredTilePosition))
+                {
+                    StartCoroutine(MoveAndMineStone(hoveredTilePosition));
+                }
             }
-            
+
             // Only move toward target if not performing an action
             transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
         }
@@ -85,7 +101,36 @@ public class PlayerController : MonoBehaviour
         // Update the target to be where the player currently is after chopping tree
         target = transform.position;
 
-        // Release movement control
+        // Release movement control by reseting flag
+        isPerformingAction = false;
+    }
+
+    IEnumerator MoveAndMineStone(Vector3Int stoneTilePosition)
+    {
+        // Set flag to prevent regular movement
+        isPerformingAction = true;
+
+        // Find closest valid tile
+        Vector3Int closestValidTile = FindClosestWalkableTile(stoneTilePosition);
+        Vector3 validWorldPos = stoneTileMap.GetCellCenterWorld(closestValidTile);
+
+        // Move player to the stone before mining
+        while (Vector3.Distance(transform.position, validWorldPos) > 0.1f)
+        {
+            transform.position = Vector3.MoveTowards(transform.position, validWorldPos, speed * Time.deltaTime);
+            yield return null;
+        }
+
+        yield return new WaitForSeconds(0.5f); // Delay mining effect
+
+        // Remove the stone
+        stoneTileMap.SetTile(stoneTilePosition, emptyTile);
+        ResetStoneHighlight();
+
+        // Update the target to be where the player currently is after mining stone
+        target = transform.position;
+
+        // Release movement controls by resetting flag
         isPerformingAction = false;
     }
 
@@ -95,7 +140,7 @@ public class PlayerController : MonoBehaviour
         if (treeTileMap.HasTile(tilePosition))
         {
             treeTileMap.SetTileFlags(tilePosition, TileFlags.None); // Allows colour modification
-            treeTileMap.SetColor(tilePosition, Color.yellow); // Change colour to yellow
+            treeTileMap.SetColor(tilePosition, new Color(0.9f, 0.9f, 0.9f, 0.9f)); // Add transparency to indicate interactable object
         }
     }
 
@@ -105,6 +150,25 @@ public class PlayerController : MonoBehaviour
         {
             treeTileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
             treeTileMap.SetColor(lastHoveredTile, originalColor); // Reset to default
+        }
+    }
+    
+        void HighlightStone(Vector3Int tilePosition)
+    {
+        // Add outline to highlight stone
+        if (stoneTileMap.HasTile(tilePosition))
+        {
+            stoneTileMap.SetTileFlags(tilePosition, TileFlags.None); // Allows colour modification
+            stoneTileMap.SetColor(tilePosition, new Color(0.9f, 0.9f, 0.9f, 0.9f)); // Add transparency to indicate interactable object
+        }
+    }
+
+    void ResetStoneHighlight()
+    {
+        if (stoneTileMap.HasTile(lastHoveredTile))
+        {
+            stoneTileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
+            stoneTileMap.SetColor(lastHoveredTile, originalColor); // Reset to default
         }
     }
 
@@ -128,6 +192,6 @@ public class PlayerController : MonoBehaviour
             }
         }
 
-        return treeTilePosition; // Defauly to the tree tile if no valid space found
+        return treeTilePosition; // Default to the tree tile if no valid space found
     }
 }
