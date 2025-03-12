@@ -26,7 +26,13 @@ public class PlayerController : MonoBehaviour
         // Mouse position handling
         Vector3 mouseWorldPosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         mouseWorldPosition.z = 0;
+        
+        // Convert mouse position to tile coordinates for tree and stone separately
         Vector3Int hoveredTilePosition = treeTileMap.WorldToCell(mouseWorldPosition);
+        
+        // Adjust for the stone tilemap's unique offset
+        Vector3 adjustedMousePosition = mouseWorldPosition - stoneTileMap.transform.position;
+        Vector3Int hoveredStoneTilePosition = stoneTileMap.WorldToCell(adjustedMousePosition);
 
         // Tree highlighting
         if (treeTileMap.HasTile(hoveredTilePosition)) 
