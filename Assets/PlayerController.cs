@@ -1,203 +1,138 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
 public class PlayerController : MonoBehaviour
 {
     public float speed = 0.5f;
-    private Vector3 target;
     public Tilemap treeTileMap;
     public Tilemap stoneTileMap;
-    public TileBase emptyTile; 
+    public TileBase emptyTile;
+    private Vector3 target;
     private Vector3Int lastHoveredTile;
     private Color originalColor = Color.white;
-    
-    // Add this to track when a coroutine is controlling movement
     private bool isPerformingAction = false;
 
     void Start()
     {
-        target = transform.position;
+        target = transform.position; // Initialize target position to the player's start position
     }
 
     void Update()
     {
-        // Mouse position handling
-        Vector3 mouseWorldPosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mouseWorldPosition.z = 0;
-        
-        // Convert mouse position to tile coordinates for tree and stone separately
-        Vector3Int hoveredTilePosition = treeTileMap.WorldToCell(mouseWorldPosition);
-        
-        // Adjust for the stone tilemap's unique offset
-        Vector3 adjustedMousePosition = mouseWorldPosition - stoneTileMap.transform.position;
-        Vector3Int hoveredStoneTilePosition = stoneTileMap.WorldToCell(adjustedMousePosition);
+        if (isPerformingAction) return; // Prevent input while performing an action
 
-        // Tree highlighting
-        if (treeTileMap.HasTile(hoveredTilePosition)) 
+        Vector3 mouseWorldPosition = GetMouseWorldPosition();
+        Vector3Int hoveredTilePosition = treeTileMap.WorldToCell(mouseWorldPosition);
+        Vector3Int hoveredStoneTilePosition = stoneTileMap.WorldToCell(mouseWorldPosition - stoneTileMap.transform.position);
+
+        HandleTileHighlighting(hoveredTilePosition, hoveredStoneTilePosition);
+        HandleInput(mouseWorldPosition, hoveredTilePosition, hoveredStoneTilePosition);
+        MovePlayer();
+    }
+
+    // Retrieves the current mouse position in world coordinates.
+    private Vector3 GetMouseWorldPosition()
+    {
+        Vector3 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+        mousePosition.z = 0;
+        return mousePosition;
+    }
+
+    // Handles tile highlighting for both trees and stones based on the current hover position.
+    private void HandleTileHighlighting(Vector3Int treePos, Vector3Int stonePos)
+    {
+        if (treeTileMap.HasTile(treePos))
         {
-            HighlightTree(hoveredTilePosition);
-            lastHoveredTile = hoveredTilePosition;
+            HighlightTile(treeTileMap, treePos);
+            lastHoveredTile = treePos;
+        }
+        else if (stoneTileMap.HasTile(stonePos))
+        {
+            HighlightTile(stoneTileMap, stonePos);
+            lastHoveredTile = stonePos;
         }
         else
         {
-            ResetTreeHighlight();
-        }
-
-
-        // Stone highlighting
-        if (stoneTileMap.HasTile(hoveredTilePosition))
-        {
-            HighlightStone(hoveredTilePosition);
-            lastHoveredTile = hoveredTilePosition;
-        }
-        else{
-            ResetStoneHighlight();
-        }
-
-        // Only process clicks if not already performing an action
-        if (!isPerformingAction)
-        {
-            // Left click for movement
-            if (Input.GetMouseButtonDown(0)) 
-            {
-                target = mouseWorldPosition;
-            }
-            // Right click for tree interaction
-            else if (Input.GetMouseButtonDown(1)) 
-            {
-                if (treeTileMap.HasTile(hoveredTilePosition)) 
-                { 
-                    StartCoroutine(MoveAndChopTree(hoveredTilePosition)); 
-                }
-                else if (stoneTileMap.HasTile(hoveredTilePosition))
-                {
-                    StartCoroutine(MoveAndMineStone(hoveredTilePosition));
-                }
-            }
-
-            // Only move toward target if not performing an action
-            transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
+            ResetTileHighlight(treeTileMap);
+            ResetTileHighlight(stoneTileMap);
         }
     }
 
-    IEnumerator MoveAndChopTree(Vector3Int treeTilePosition)
+    // Processes user input for movement and interaction with objects.
+    private void HandleInput(Vector3 mouseWorldPos, Vector3Int treePos, Vector3Int stonePos)
     {
-        // Set flag to prevent regular movement
-        isPerformingAction = true;
-        
-        // Find closest valid tile
-        Vector3Int closestValidTile = FindClosestWalkableTile(treeTilePosition);
-        Vector3 validWorldPos = treeTileMap.GetCellCenterWorld(closestValidTile);
-
-        // Move player to the tree before chopping
-        while (Vector3.Distance(transform.position, validWorldPos) > 0.1f)
+        if (Input.GetMouseButtonDown(0)) // Left click to move
         {
-            transform.position = Vector3.MoveTowards(transform.position, validWorldPos, speed * Time.deltaTime);
-            yield return null;
+            target = mouseWorldPos;
         }
+        else if (Input.GetMouseButtonDown(1)) // Right click to interact
+        {
+            if (treeTileMap.HasTile(treePos)) StartCoroutine(MoveAndInteract(treePos, treeTileMap));
+            else if (stoneTileMap.HasTile(stonePos)) StartCoroutine(MoveAndInteract(stonePos, stoneTileMap));
+        }
+    }
 
-        yield return new WaitForSeconds(0.5f); // Delay for chopping effect
+    // Moves the player towards the target position.
+    private void MovePlayer()
+    {
+        transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
+    }
+
+    // Moves the player to the target tile and performs an interaction.
+    private IEnumerator MoveAndInteract(Vector3Int tilePos, Tilemap tileMap)
+    {
+        isPerformingAction = true;
+        Vector3Int closestTile = FindClosestWalkableTile(tilePos, tileMap);
+        Vector3 worldPos = tileMap.GetCellCenterWorld(closestTile);
+
+        yield return MoveToTarget(worldPos);
+        yield return new WaitForSeconds(0.5f); // Simulate interaction delay
         
-        // Remove the tree
-        treeTileMap.SetTile(treeTilePosition, emptyTile);
-        ResetTreeHighlight();
-        
-        // Update the target to be where the player currently is after chopping tree
+        tileMap.SetTile(tilePos, emptyTile); // Remove the interacted tile
+        ResetTileHighlight(tileMap);
         target = transform.position;
-
-        // Release movement control by reseting flag
         isPerformingAction = false;
     }
 
-    IEnumerator MoveAndMineStone(Vector3Int stoneTilePosition)
+    // Moves the player to a specific target position over time.
+    private IEnumerator MoveToTarget(Vector3 destination)
     {
-        // Set flag to prevent regular movement
-        isPerformingAction = true;
-
-        // Find closest valid tile
-        Vector3Int closestValidTile = FindClosestWalkableTile(stoneTilePosition);
-        Vector3 validWorldPos = stoneTileMap.GetCellCenterWorld(closestValidTile);
-
-        // Move player to the stone before mining
-        while (Vector3.Distance(transform.position, validWorldPos) > 0.1f)
+        while (Vector3.Distance(transform.position, destination) > 0.1f)
         {
-            transform.position = Vector3.MoveTowards(transform.position, validWorldPos, speed * Time.deltaTime);
+            transform.position = Vector3.MoveTowards(transform.position, destination, speed * Time.deltaTime);
             yield return null;
         }
-
-        yield return new WaitForSeconds(0.5f); // Delay mining effect
-
-        // Remove the stone
-        stoneTileMap.SetTile(stoneTilePosition, emptyTile);
-        ResetStoneHighlight();
-
-        // Update the target to be where the player currently is after mining stone
-        target = transform.position;
-
-        // Release movement controls by resetting flag
-        isPerformingAction = false;
     }
 
-    void HighlightTree(Vector3Int tilePosition)
+    // Highlights a specified tile by adjusting its color.
+    private void HighlightTile(Tilemap tileMap, Vector3Int tilePos)
     {
-        // Add outline to highlight tree
-        if (treeTileMap.HasTile(tilePosition))
+        tileMap.SetTileFlags(tilePos, TileFlags.None);
+        tileMap.SetColor(tilePos, new Color(0.9f, 0.9f, 0.9f, 0.9f));
+    }
+
+    // Resets the color of the last hovered tile to its original state.
+    private void ResetTileHighlight(Tilemap tileMap)
+    {
+        if (tileMap.HasTile(lastHoveredTile))
         {
-            treeTileMap.SetTileFlags(tilePosition, TileFlags.None); // Allows colour modification
-            treeTileMap.SetColor(tilePosition, new Color(0.9f, 0.9f, 0.9f, 0.9f)); // Add transparency to indicate interactable object
+            tileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
+            tileMap.SetColor(lastHoveredTile, originalColor);
         }
     }
 
-    void ResetTreeHighlight()
+    // Finds the closest walkable tile adjacent to the specified tile.
+    private Vector3Int FindClosestWalkableTile(Vector3Int tilePos, Tilemap tileMap)
     {
-        if (treeTileMap.HasTile(lastHoveredTile))
-        {
-            treeTileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
-            treeTileMap.SetColor(lastHoveredTile, originalColor); // Reset to default
-        }
-    }
-    
-        void HighlightStone(Vector3Int tilePosition)
-    {
-        // Add outline to highlight stone
-        if (stoneTileMap.HasTile(tilePosition))
-        {
-            stoneTileMap.SetTileFlags(tilePosition, TileFlags.None); // Allows colour modification
-            stoneTileMap.SetColor(tilePosition, new Color(0.9f, 0.9f, 0.9f, 0.9f)); // Add transparency to indicate interactable object
-        }
-    }
-
-    void ResetStoneHighlight()
-    {
-        if (stoneTileMap.HasTile(lastHoveredTile))
-        {
-            stoneTileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
-            stoneTileMap.SetColor(lastHoveredTile, originalColor); // Reset to default
-        }
-    }
-
-    Vector3Int FindClosestWalkableTile(Vector3Int treeTilePosition)
-    {
-        // Define 4 possible adjacent tiles
-        Vector3Int[] directions = {
-            new Vector3Int(1,0,0), // Right
-            new Vector3Int(-1,0,0), // Left
-            new Vector3Int(0,1,0), // Up
-            new Vector3Int(0,-1,0) // Down
-        };
-
-        // Find the first walkable tile
+        Vector3Int[] directions = { Vector3Int.right, Vector3Int.left, Vector3Int.up, Vector3Int.down };
+        
         foreach (Vector3Int dir in directions)
         {
-            Vector3Int adjacentTile = treeTilePosition + dir;
-            if (!treeTileMap.HasTile(adjacentTile)) // Check if it's NOT a tree
-            {
-                return adjacentTile;
-            }
+            Vector3Int adjacentTile = tilePos + dir;
+            if (!tileMap.HasTile(adjacentTile)) return adjacentTile;
         }
-
-        return treeTilePosition; // Default to the tree tile if no valid space found
+        
+        return tilePos;
     }
 }
