@@ -79,6 +79,7 @@ public class PlayerController : MonoBehaviour
         transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
     }
 
+
     // Moves the player to the target tile and performs an interaction.
     private IEnumerator MoveAndInteract(Vector3Int tilePos, Tilemap tileMap)
     {
