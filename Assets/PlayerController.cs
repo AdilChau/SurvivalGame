@@ -1,3 +1,5 @@
+// Controls player movement, tile highlighting, and path previewing
+
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,169 +7,135 @@ using UnityEngine.Tilemaps;
 
 public class PlayerController : MonoBehaviour
 {
-    public float speed = 2f; // Speed at which the player moves
-    public Tilemap walkableTilemap; // Reference to the walkable tilemap
-    public Tilemap treeTileMap; // Reference to the tree tilemap (obstacles)
-    public Tilemap stoneTileMap; // Reference to the stone tilemap (obstacles)
-    public Pathfinder pathfinder; // Reference to the A* pathfinding system
-    public TileBase emptyTile; // Tile used to replace interacted objects
+    public float speed = 2f; // Player movement speed
+    public Tilemap walkableTilemap; // Ground tilemap
+    public Tilemap treeTileMap; // Tree obstacles
+    public Tilemap stoneTileMap; // Stone obstacles
+    public Pathfinder pathfinder; // Reference to the pathfinding system
+    public LineRenderer pathLine; // Line preview renderer
 
-    private Queue<Vector3> pathQueue = new Queue<Vector3>(); // Stores movement path
-    private Vector3Int lastHoveredTile; // Keeps track of last highlighted tile
-    private Color originalColor = Color.white; // Default tile color
-    private bool isPerformingAction = false; // Prevents movement during interaction
+    private Queue<Vector3> pathQueue = new Queue<Vector3>(); // Queue of target world positions
+    private List<Vector3Int> currentPath = new List<Vector3Int>(); // List of tile positions in path
 
-    void Start()
+    private Vector3Int prevHoveredTile; // Previously hovered tile
+    private Color originalColor = Color.white; // Default color for unhighlighted tile
+
+    private void Start()
     {
-        pathfinder = FindObjectOfType<Pathfinder>(); // Find and assign the Pathfinder script
+        pathLine.positionCount = 0; // Clear path preview
+        pathfinder = FindObjectOfType<Pathfinder>(); // Find the Pathfinder instance
     }
 
-    void Update()
+    private void Update()
     {
-        if (isPerformingAction) return; // Prevent input while performing an action
+        Vector3 mouseWorld = GetMouseWorldPosition();
+        Vector3Int hoveredTile = walkableTilemap.WorldToCell(mouseWorld);
 
-        Vector3 mouseWorldPosition = GetMouseWorldPosition(); // Get current mouse position
-        Vector3Int hoveredTilePosition = treeTileMap.WorldToCell(mouseWorldPosition);
-        Vector3Int hoveredStoneTilePosition = stoneTileMap.WorldToCell(mouseWorldPosition - stoneTileMap.transform.position);
+        HandleTileHighlighting(hoveredTile); // Highlight the tile under mouse
 
-        // Handle highlighting of interactable tiles
-        HandleTileHighlighting(hoveredTilePosition, hoveredStoneTilePosition);
+        if (Input.GetMouseButtonDown(0)) // On left click, set path
+        {
+            SetPath(hoveredTile);
+        }
 
-        // Handle input for movement and interaction
-        HandleInput(mouseWorldPosition, hoveredTilePosition, hoveredStoneTilePosition);
-
-        // Move the player along the queued path
-        MoveAlongPath();
+        MoveAlongPath(); // Move the player each frame
     }
 
-    // Retrieves the current mouse position in world coordinates.
+    // Gets current mouse position in world space
     private Vector3 GetMouseWorldPosition()
     {
         Vector3 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        mousePosition.z = 0;
+        mousePosition.z = 0f;
         return mousePosition;
     }
 
-    // Handles tile highlighting for both trees and stones based on the current hover position.
-    private void HandleTileHighlighting(Vector3Int treePos, Vector3Int stonePos)
+    // Highlights the currently hovered tile and resets the last
+    private void HandleTileHighlighting(Vector3Int hoveredTile)
     {
-        if (treeTileMap.HasTile(treePos))
+        if (hoveredTile != prevHoveredTile)
         {
-            HighlightTile(treeTileMap, treePos);
-            lastHoveredTile = treePos;
-        }
-        else if (stoneTileMap.HasTile(stonePos))
-        {
-            HighlightTile(stoneTileMap, stonePos);
-            lastHoveredTile = stonePos;
-        }
-        else
-        {
-            ResetTileHighlight(treeTileMap);
-            ResetTileHighlight(stoneTileMap);
-        }
-    }
-
-    // Processes user input for movement and interaction with objects.
-    private void HandleInput(Vector3 mouseWorldPos, Vector3Int treePos, Vector3Int stonePos)
-    {
-        if (Input.GetMouseButtonDown(0)) // Left click to move
-        {
-            SetPath(mouseWorldPos);
-        }
-        else if (Input.GetMouseButtonDown(1)) // Right click to interact
-        {
-            if (treeTileMap.HasTile(treePos)) StartCoroutine(MoveAndInteract(treePos, treeTileMap));
-            else if (stoneTileMap.HasTile(stonePos)) StartCoroutine(MoveAndInteract(stonePos, stoneTileMap));
-        }
-    }
-
-    // Sets the movement path using A* pathfinding.
-    private void SetPath(Vector3 worldPosition)
-    {
-        Vector3Int destination = walkableTilemap.WorldToCell(worldPosition);
-        Vector3Int startPos = walkableTilemap.WorldToCell(transform.position);
-        List<Vector3Int> path = pathfinder.FindPath(startPos, destination);
-
-        if (path != null)
-        {
-            pathQueue.Clear();
-            foreach (Vector3Int tile in path)
+            if (walkableTilemap.HasTile(prevHoveredTile))
             {
-                pathQueue.Enqueue(walkableTilemap.GetCellCenterWorld(tile));
+                ResetTileHighlight(walkableTilemap, prevHoveredTile);
             }
+
+            if (walkableTilemap.HasTile(hoveredTile))
+            {
+                HighlightTile(walkableTilemap, hoveredTile);
+            }
+
+            prevHoveredTile = hoveredTile;
         }
     }
 
-    // Moves the player along the path if there are tiles to move to.
+    // Highlights a tile by tinting it
+    private void HighlightTile(Tilemap tileMap, Vector3Int tilePos)
+    {
+        tileMap.SetTileFlags(tilePos, TileFlags.None);
+        tileMap.SetColor(tilePos, new Color(1f, 1f, 1f, 0.7f)); // Slightly faded
+    }
+
+    // Resets the tile color to original
+    private void ResetTileHighlight(Tilemap tileMap, Vector3Int tilePos)
+    {
+        tileMap.SetTileFlags(tilePos, TileFlags.None);
+        tileMap.SetColor(tilePos, originalColor);
+    }
+
+    // Sets a path from player to target using Pathfinder
+    private void SetPath(Vector3Int destination)
+    {
+        Vector3Int start = walkableTilemap.WorldToCell(transform.position);
+        List<Vector3Int> path = pathfinder.FindPath(start, destination);
+
+        if (path == null) return; // No path found
+
+        pathQueue.Clear();
+        currentPath = path;
+        pathLine.positionCount = path.Count;
+
+        for (int i = 0; i < path.Count; i++)
+        {
+            Vector3 worldPos = walkableTilemap.GetCellCenterWorld(path[i]);
+            pathQueue.Enqueue(worldPos);
+            pathLine.SetPosition(i, worldPos);
+        }
+    }
+
+    // Moves the player step-by-step toward next queued point
     private void MoveAlongPath()
     {
         if (pathQueue.Count == 0) return;
 
-        Vector3 targetPosition = pathQueue.Peek();
-        transform.position = Vector3.MoveTowards(transform.position, targetPosition, speed * Time.deltaTime);
+        Vector3 target = pathQueue.Peek();
+        transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
 
-        if (Vector3.Distance(transform.position, targetPosition) < 0.1f)
+        if (Vector3.Distance(transform.position, target) < 0.05f)
         {
             pathQueue.Dequeue();
+            UpdatePathLine();
         }
     }
 
-    // Moves the player to the target tile and performs an interaction.
-    private IEnumerator MoveAndInteract(Vector3Int tilePos, Tilemap tileMap)
+    // Updates the line renderer as segments are completed
+    private void UpdatePathLine()
     {
-        isPerformingAction = true;
-
-        // Find the closest walkable tile to interact from
-        Vector3Int closestTile = FindClosestWalkableTile(tilePos, tileMap);
-        Vector3 worldPos = tileMap.GetCellCenterWorld(closestTile);
-
-        yield return MoveToTarget(worldPos);
-        yield return new WaitForSeconds(0.5f); // Simulate interaction delay
-        
-        tileMap.SetTile(tilePos, emptyTile); // Remove the interacted tile
-        ResetTileHighlight(tileMap);
-        isPerformingAction = false;
-    }
-
-    // Moves the player to a specific target position over time.
-    private IEnumerator MoveToTarget(Vector3 destination)
-    {
-        while (Vector3.Distance(transform.position, destination) > 0.1f)
+        if (currentPath.Count > 0)
         {
-            transform.position = Vector3.MoveTowards(transform.position, destination, speed * Time.deltaTime);
-            yield return null;
-        }
-    }
+            currentPath.RemoveAt(0);
 
-    // Highlights a specified tile by adjusting its color.
-    private void HighlightTile(Tilemap tileMap, Vector3Int tilePos)
-    {
-        tileMap.SetTileFlags(tilePos, TileFlags.None);
-        tileMap.SetColor(tilePos, new Color(0.9f, 0.9f, 0.9f, 0.9f));
-    }
-
-    // Resets the color of the last hovered tile to its original state.
-    private void ResetTileHighlight(Tilemap tileMap)
-    {
-        if (tileMap.HasTile(lastHoveredTile))
-        {
-            tileMap.SetTileFlags(lastHoveredTile, TileFlags.None);
-            tileMap.SetColor(lastHoveredTile, originalColor);
+            if (currentPath.Count == 0)
+            {
+                pathLine.positionCount = 0;
+            }
+            else
+            {
+                pathLine.positionCount = currentPath.Count;
+                for (int i = 0; i < currentPath.Count; i++)
+                {
+                    pathLine.SetPosition(i, walkableTilemap.GetCellCenterWorld(currentPath[i]));
+                }
+            }
         }
-    }
-
-    // Finds the closest walkable tile adjacent to the specified tile.
-    private Vector3Int FindClosestWalkableTile(Vector3Int tilePos, Tilemap tileMap)
-    {
-        Vector3Int[] directions = { Vector3Int.right, Vector3Int.left, Vector3Int.up, Vector3Int.down };
-        
-        foreach (Vector3Int dir in directions)
-        {
-            Vector3Int adjacentTile = tilePos + dir;
-            if (!tileMap.HasTile(adjacentTile)) return adjacentTile;
-        }
-        
-        return tilePos;
     }
 }
