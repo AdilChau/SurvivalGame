@@ -27,6 +27,14 @@ public class Pathfinder : MonoBehaviour
         }
     }
 
+    // Public method to regenerate the pathfinding grid (after tile changes)
+    public void RegenerateGrid()
+    {
+        grid.Clear();          // Clear old data
+        GenerateGrid();        // Rebuild grid from tilemaps
+    }
+
+
     // Check if any obstacle tilemaps have a tile at this position
     private bool IsObstacle(Vector3Int position)
     {

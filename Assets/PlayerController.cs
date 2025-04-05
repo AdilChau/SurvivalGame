@@ -1,4 +1,4 @@
-// Controls player movement, tile highlighting, and path previewing
+// Controls player movement, tile highlighting, and path previewing + obstacle interaction
 
 using System.Collections;
 using System.Collections.Generic;
@@ -7,7 +7,7 @@ using UnityEngine.Tilemaps;
 
 public class PlayerController : MonoBehaviour
 {
-    public float speed = 2f; // Player movement speed
+    public float speed = 1f; // Player movement speed
     public Tilemap walkableTilemap; // Ground tilemap
     public Tilemap treeTileMap; // Tree obstacles
     public Tilemap stoneTileMap; // Stone obstacles
@@ -19,6 +19,9 @@ public class PlayerController : MonoBehaviour
 
     private Vector3Int prevHoveredTile; // Previously hovered tile
     private Color originalColor = Color.white; // Default color for unhighlighted tile
+
+    private Vector3Int pendingBreakTile; // Tile marked for breaking
+    private bool isBreakingObstacle = false; // Whether we are in the process of breaking
 
     private void Start()
     {
@@ -38,6 +41,11 @@ public class PlayerController : MonoBehaviour
             SetPath(hoveredTile);
         }
 
+        if (Input.GetMouseButtonDown(1)) // On right click, try to interact
+        {
+            TryInitiateBreak(hoveredTile);
+        }
+
         MoveAlongPath(); // Move the player each frame
     }
 
@@ -55,14 +63,22 @@ public class PlayerController : MonoBehaviour
         if (hoveredTile != prevHoveredTile)
         {
             if (walkableTilemap.HasTile(prevHoveredTile))
-            {
                 ResetTileHighlight(walkableTilemap, prevHoveredTile);
-            }
+
+            if (treeTileMap.HasTile(prevHoveredTile))
+                ResetTileHighlight(treeTileMap, prevHoveredTile);
+
+            if (stoneTileMap.HasTile(prevHoveredTile))
+                ResetTileHighlight(stoneTileMap, prevHoveredTile);
 
             if (walkableTilemap.HasTile(hoveredTile))
-            {
                 HighlightTile(walkableTilemap, hoveredTile);
-            }
+
+            if (treeTileMap.HasTile(hoveredTile))
+                HighlightTile(treeTileMap, hoveredTile);
+
+            if (stoneTileMap.HasTile(hoveredTile))
+                HighlightTile(stoneTileMap, hoveredTile);
 
             prevHoveredTile = hoveredTile;
         }
@@ -72,7 +88,7 @@ public class PlayerController : MonoBehaviour
     private void HighlightTile(Tilemap tileMap, Vector3Int tilePos)
     {
         tileMap.SetTileFlags(tilePos, TileFlags.None);
-        tileMap.SetColor(tilePos, new Color(1f, 1f, 1f, 0.7f)); // Slightly faded
+        tileMap.SetColor(tilePos, new Color(1f, 1f, 1f, 0.8f)); // Slightly faded
     }
 
     // Resets the tile color to original
@@ -80,6 +96,71 @@ public class PlayerController : MonoBehaviour
     {
         tileMap.SetTileFlags(tilePos, TileFlags.None);
         tileMap.SetColor(tilePos, originalColor);
+    }
+
+    // Attempts to break an obstacle by moving next to it first
+    private void TryInitiateBreak(Vector3Int obstacleTile)
+    {
+        if (treeTileMap.HasTile(obstacleTile) || stoneTileMap.HasTile(obstacleTile))
+        {
+            Vector3Int playerTile = walkableTilemap.WorldToCell(transform.position);
+            Vector3Int? targetAdjacent = GetNearestWalkableAdjacent(obstacleTile, playerTile);
+
+            if (targetAdjacent.HasValue)
+            {
+                SetPath(targetAdjacent.Value);
+                pendingBreakTile = obstacleTile;
+                isBreakingObstacle = true;
+            }
+        }
+    }
+
+    // Finds a walkable tile next to the target that is closest to player
+    private Vector3Int? GetNearestWalkableAdjacent(Vector3Int obstacle, Vector3Int player)
+    {
+        List<Vector3Int> neighbors = new List<Vector3Int>
+        {
+            obstacle + Vector3Int.up,
+            obstacle + Vector3Int.down,
+            obstacle + Vector3Int.left,
+            obstacle + Vector3Int.right
+        };
+
+        Vector3Int? best = null;
+        int bestDist = int.MaxValue;
+
+        foreach (var tile in neighbors)
+        {
+            if (walkableTilemap.HasTile(tile) && !treeTileMap.HasTile(tile) && !stoneTileMap.HasTile(tile))
+            {
+                int dist = Mathf.Abs(tile.x - player.x) + Mathf.Abs(tile.y - player.y);
+                if (dist < bestDist)
+                {
+                    best = tile;
+                    bestDist = dist;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    // Actually removes the obstacle after delay (for animation)
+    private IEnumerator BreakObstacleAfterDelay(Vector3Int tile)
+    {
+        yield return new WaitForSeconds(0.5f); // Add delay for animation
+
+        if (treeTileMap.HasTile(tile))
+        {
+            treeTileMap.SetTile(tile, null);
+        }
+        else if (stoneTileMap.HasTile(tile))
+        {
+            stoneTileMap.SetTile(tile, null);
+        }
+
+        // Update the pathfinding grid to mark this tile as walkable again
+        pathfinder.RegenerateGrid();
     }
 
     // Sets a path from player to target using Pathfinder
@@ -105,7 +186,15 @@ public class PlayerController : MonoBehaviour
     // Moves the player step-by-step toward next queued point
     private void MoveAlongPath()
     {
-        if (pathQueue.Count == 0) return;
+        if (pathQueue.Count == 0)
+        {
+            if (isBreakingObstacle)
+            {
+                StartCoroutine(BreakObstacleAfterDelay(pendingBreakTile));
+                isBreakingObstacle = false;
+            }
+            return;
+        }
 
         Vector3 target = pathQueue.Peek();
         transform.position = Vector3.MoveTowards(transform.position, target, speed * Time.deltaTime);
