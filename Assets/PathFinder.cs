@@ -4,19 +4,20 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
+// Handles grid-based A* pathfinding, avoiding obstacle tiles
 public class Pathfinder : MonoBehaviour
 {
-    public Tilemap walkableTilemap; // Main ground tilemap
-    public Tilemap[] obstacleTilemaps; // Tilemaps that represent obstacles
+    public Tilemap walkableTilemap; // Main ground tilemap used for walkable tiles
+    public Tilemap[] obstacleTilemaps; // Array of tilemaps representing obstacles (e.g., trees, stones)
 
-    private Dictionary<Vector3Int, Node> grid = new Dictionary<Vector3Int, Node>();
+    private Dictionary<Vector3Int, Node> grid = new Dictionary<Vector3Int, Node>(); // Stores the grid with walkability info
 
     private void Start()
     {
-        GenerateGrid(); // Initialize grid at startup
+        GenerateGrid(); // Build initial walkability grid
     }
 
-    // Build a dictionary of all walkable tiles
+    // Scans the walkable tilemap and marks each tile as walkable or not based on obstacle presence
     private void GenerateGrid()
     {
         BoundsInt bounds = walkableTilemap.cellBounds;
@@ -27,15 +28,14 @@ public class Pathfinder : MonoBehaviour
         }
     }
 
-    // Public method to regenerate the pathfinding grid (after tile changes)
+    // Clears and rebuilds the grid, useful when obstacles are added/removed at runtime
     public void RegenerateGrid()
     {
-        grid.Clear();          // Clear old data
-        GenerateGrid();        // Rebuild grid from tilemaps
+        grid.Clear();
+        GenerateGrid();
     }
 
-
-    // Check if any obstacle tilemaps have a tile at this position
+    // Checks all obstacle tilemaps to determine if a tile is blocked
     private bool IsObstacle(Vector3Int position)
     {
         foreach (Tilemap obstacleTilemap in obstacleTilemaps)
@@ -45,13 +45,13 @@ public class Pathfinder : MonoBehaviour
         return false;
     }
 
-    // A* pathfinding algorithm
+    // Returns a path using A* algorithm from start to target, or null if no path found
     public List<Vector3Int> FindPath(Vector3Int start, Vector3Int target)
     {
         if (!grid.ContainsKey(target) || !grid[target].isWalkable) return null;
 
-        List<Node> openList = new List<Node> { grid[start] };
-        HashSet<Node> closedList = new HashSet<Node>();
+        List<Node> openList = new List<Node> { grid[start] }; // List of nodes to evaluate
+        HashSet<Node> closedList = new HashSet<Node>(); // List of nodes already evaluated
 
         foreach (Node node in grid.Values)
         {
@@ -93,10 +93,10 @@ public class Pathfinder : MonoBehaviour
             }
         }
 
-        return null; // No valid path found
+        return null; // Return null if path couldn't be found
     }
 
-    // Get path by walking back through parents
+    // Traces the final path from target to start by walking backwards through parent nodes
     private List<Vector3Int> RetracePath(Node start, Node end)
     {
         List<Vector3Int> path = new List<Vector3Int>();
@@ -108,11 +108,11 @@ public class Pathfinder : MonoBehaviour
             currentNode = currentNode.parent;
         }
 
-        path.Reverse();
+        path.Reverse(); // Reverse so it starts from origin
         return path;
     }
 
-    // Choose the node with the lowest F-cost (G + H)
+    // Selects the node in the list with the lowest total cost (fCost)
     private Node GetLowestFCostNode(List<Node> nodes)
     {
         Node lowest = nodes[0];
@@ -123,15 +123,15 @@ public class Pathfinder : MonoBehaviour
         return lowest;
     }
 
-    // Use diagonal-friendly heuristic
+    // Heuristic cost estimate using diagonal-friendly max difference
     private int GetDistance(Vector3Int a, Vector3Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
         int dy = Mathf.Abs(a.y - b.y);
-        return 10 * Mathf.Max(dx, dy);
+        return 10 * Mathf.Max(dx, dy); // Diagonal movement weight
     }
 
-    // Get 8-directional neighboring tiles
+    // Returns all 8-connected neighbors (including diagonals)
     private List<Vector3Int> GetNeighbors(Vector3Int pos)
     {
         return new List<Vector3Int>
@@ -148,13 +148,13 @@ public class Pathfinder : MonoBehaviour
     }
 }
 
-// Helper class for pathfinding
+// Node class used for pathfinding grid
 public class Node
 {
-    public Vector3Int position;
-    public bool isWalkable;
-    public int gCost, hCost, fCost;
-    public Node parent;
+    public Vector3Int position; // Tile position on grid
+    public bool isWalkable; // Whether the tile is walkable
+    public int gCost, hCost, fCost; // Cost values used by A* algorithm
+    public Node parent; // Parent node used for path retracing
 
     public Node(Vector3Int pos, bool walkable)
     {
@@ -162,6 +162,7 @@ public class Node
         isWalkable = walkable;
     }
 
+    // fCost = gCost + hCost
     public void CalculateFCost()
     {
         fCost = gCost + hCost;

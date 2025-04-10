@@ -1,32 +1,36 @@
-// Controls player movement, tile highlighting, and path previewing + obstacle interaction
-
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
+// Handles player movement, pathfinding interaction, and tile highlighting in a grid-based isometric environment
 public class PlayerController : MonoBehaviour
 {
-    public float speed = 1f; // Player movement speed
-    public Tilemap walkableTilemap; // Ground tilemap
-    public Tilemap treeTileMap; // Tree obstacles
-    public Tilemap stoneTileMap; // Stone obstacles
-    public Pathfinder pathfinder; // Reference to the pathfinding system
-    public LineRenderer pathLine; // Line preview renderer
+    [Header("Tilemaps")]
+    public Tilemap walkableTilemap;      // Tilemap for walkable ground
+    public Tilemap treeTileMap;          // Tilemap for tree obstacles (trunks only)
+    public Tilemap stoneTileMap;         // Tilemap for stone obstacles
 
-    private Queue<Vector3> pathQueue = new Queue<Vector3>(); // Queue of target world positions
-    private List<Vector3Int> currentPath = new List<Vector3Int>(); // List of tile positions in path
+    [Header("Pathfinding")]
+    public Pathfinder pathfinder;        // Reference to the Pathfinder system
+    public LineRenderer pathLine;        // Line renderer to visualize path
 
-    private Vector3Int prevHoveredTile; // Previously hovered tile
-    private Color originalColor = Color.white; // Default color for unhighlighted tile
+    [Header("Movement")]
+    public float speed = 1f;             // Movement speed of the player
 
-    private Vector3Int pendingBreakTile; // Tile marked for breaking
-    private bool isBreakingObstacle = false; // Whether we are in the process of breaking
+    private Queue<Vector3> pathQueue = new Queue<Vector3>();      // Queue of target positions in world space
+    private List<Vector3Int> currentPath = new List<Vector3Int>(); // List of tile positions in the path
+
+    private Vector3Int prevHoveredTile;                          // Previously highlighted tile
+    private Color originalColor = Color.white;                   // Default tile color
+
+    private Vector3Int pendingBreakTile;                         // Tile selected for interaction
+    private bool isBreakingObstacle = false;                     // Whether the player is trying to break an obstacle
 
     private void Start()
     {
-        pathLine.positionCount = 0; // Clear path preview
-        pathfinder = FindObjectOfType<Pathfinder>(); // Find the Pathfinder instance
+        pathLine.positionCount = 0;                              // Clear any previous line path
+        pathfinder = FindObjectOfType<Pathfinder>();            // Auto-assign pathfinder if not set
     }
 
     private void Update()
@@ -34,22 +38,22 @@ public class PlayerController : MonoBehaviour
         Vector3 mouseWorld = GetMouseWorldPosition();
         Vector3Int hoveredTile = walkableTilemap.WorldToCell(mouseWorld);
 
-        HandleTileHighlighting(hoveredTile); // Highlight the tile under mouse
+        HandleTileHighlighting(hoveredTile);                    // Update tile highlighting as mouse moves
 
-        if (Input.GetMouseButtonDown(0)) // On left click, set path
+        if (Input.GetMouseButtonDown(0))                        // Left click to move
         {
             SetPath(hoveredTile);
         }
 
-        if (Input.GetMouseButtonDown(1)) // On right click, try to interact
+        if (Input.GetMouseButtonDown(1))                        // Right click to interact with obstacle
         {
             TryInitiateBreak(hoveredTile);
         }
 
-        MoveAlongPath(); // Move the player each frame
+        MoveAlongPath();                                       // Move along current path if any
     }
 
-    // Gets current mouse position in world space
+    // Converts screen mouse position to world position
     private Vector3 GetMouseWorldPosition()
     {
         Vector3 mousePosition = Camera.main.ScreenToWorldPoint(Input.mousePosition);
@@ -57,7 +61,7 @@ public class PlayerController : MonoBehaviour
         return mousePosition;
     }
 
-    // Highlights the currently hovered tile and resets the last
+    // Highlights the currently hovered tile and unhighlights the previously hovered one
     private void HandleTileHighlighting(Vector3Int hoveredTile)
     {
         if (hoveredTile != prevHoveredTile)
@@ -84,21 +88,21 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Highlights a tile by tinting it
+    // Applies a semi-transparent highlight to a tile
     private void HighlightTile(Tilemap tileMap, Vector3Int tilePos)
     {
         tileMap.SetTileFlags(tilePos, TileFlags.None);
-        tileMap.SetColor(tilePos, new Color(1f, 1f, 1f, 0.8f)); // Slightly faded
+        tileMap.SetColor(tilePos, new Color(1f, 1f, 1f, 0.8f));
     }
 
-    // Resets the tile color to original
+    // Resets the tile color back to default
     private void ResetTileHighlight(Tilemap tileMap, Vector3Int tilePos)
     {
         tileMap.SetTileFlags(tilePos, TileFlags.None);
         tileMap.SetColor(tilePos, originalColor);
     }
 
-    // Attempts to break an obstacle by moving next to it first
+    // Attempts to move next to an obstacle and prepare to break it
     private void TryInitiateBreak(Vector3Int obstacleTile)
     {
         if (treeTileMap.HasTile(obstacleTile) || stoneTileMap.HasTile(obstacleTile))
@@ -115,7 +119,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Finds a walkable tile next to the target that is closest to player
+    // Finds a walkable tile next to the obstacle that is closest to the player
     private Vector3Int? GetNearestWalkableAdjacent(Vector3Int obstacle, Vector3Int player)
     {
         List<Vector3Int> neighbors = new List<Vector3Int>
@@ -145,10 +149,10 @@ public class PlayerController : MonoBehaviour
         return best;
     }
 
-    // Actually removes the obstacle after delay (for animation)
+    // Coroutine to delay the removal of an obstacle (for future animation)
     private IEnumerator BreakObstacleAfterDelay(Vector3Int tile)
     {
-        yield return new WaitForSeconds(0.5f); // Add delay for animation
+        yield return new WaitForSeconds(0.5f); // Delay for animation timing
 
         if (treeTileMap.HasTile(tile))
         {
@@ -159,11 +163,10 @@ public class PlayerController : MonoBehaviour
             stoneTileMap.SetTile(tile, null);
         }
 
-        // Update the pathfinding grid to mark this tile as walkable again
-        pathfinder.RegenerateGrid();
+        pathfinder.RegenerateGrid(); // Refresh the grid since a tile was cleared
     }
 
-    // Sets a path from player to target using Pathfinder
+    // Finds a path and enqueues movement positions
     private void SetPath(Vector3Int destination)
     {
         Vector3Int start = walkableTilemap.WorldToCell(transform.position);
@@ -183,7 +186,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Moves the player step-by-step toward next queued point
+    // Moves the player toward the next point in the queue
     private void MoveAlongPath()
     {
         if (pathQueue.Count == 0)
@@ -206,7 +209,7 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    // Updates the line renderer as segments are completed
+    // Updates the visual path line as the player walks
     private void UpdatePathLine()
     {
         if (currentPath.Count > 0)
