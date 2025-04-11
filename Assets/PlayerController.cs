@@ -10,6 +10,8 @@ public class PlayerController : MonoBehaviour
     public Tilemap walkableTilemap;      // Tilemap for walkable ground
     public Tilemap treeTileMap;          // Tilemap for tree obstacles (trunks only)
     public Tilemap stoneTileMap;         // Tilemap for stone obstacles
+    public Tilemap treeVisualTileMap;
+
 
     [Header("Pathfinding")]
     public Pathfinder pathfinder;        // Reference to the Pathfinder system
@@ -156,14 +158,28 @@ public class PlayerController : MonoBehaviour
 
         if (treeTileMap.HasTile(tile))
         {
-            treeTileMap.SetTile(tile, null);
+            // We assume this tile is the bottom-left (trunk) of the tree
+            Vector3Int[] treeParts = new Vector3Int[]
+            {
+                tile,                             // Bottom Left (trunk)
+                tile + new Vector3Int(1, 0, 0),   // Bottom Right
+                tile + new Vector3Int(0, 1, 0),   // Top Left
+                tile + new Vector3Int(1, 1, 0)    // Top Right
+            };
+
+            foreach (var pos in treeParts)
+            {
+                treeTileMap.SetTile(pos, null);
+                treeVisualTileMap.SetTile(pos, null); // Visual canopy
+            }
         }
         else if (stoneTileMap.HasTile(tile))
         {
             stoneTileMap.SetTile(tile, null);
         }
 
-        pathfinder.RegenerateGrid(); // Refresh the grid since a tile was cleared
+        // Rebuild the pathfinding grid after removing an obstacle
+        pathfinder.RegenerateGrid();
     }
 
     // Finds a path and enqueues movement positions
