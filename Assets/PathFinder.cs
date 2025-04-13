@@ -1,160 +1,190 @@
-// Handles A* pathfinding, avoiding obstacles like trees or stones
+// Pathfinder.cs
+// Handles A* pathfinding using a tile-based grid system and dynamic obstacle checking via tilemaps.
 
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Tilemaps;
 
-// Handles grid-based A* pathfinding, avoiding obstacle tiles
 public class Pathfinder : MonoBehaviour
 {
-    public Tilemap walkableTilemap; // Main ground tilemap used for walkable tiles
-    public Tilemap[] obstacleTilemaps; // Array of tilemaps representing obstacles (e.g., trees, stones)
+    [Header("Tilemap References")]
+    public Tilemap walkableTilemap;             // The tilemap that represents walkable ground
+    public Tilemap[] obstacleTilemaps;          // Tilemaps that contain obstacles (e.g., trees, stones)
 
-    private Dictionary<Vector3Int, Node> grid = new Dictionary<Vector3Int, Node>(); // Stores the grid with walkability info
+    // Internal pathfinding grid storing walkability and node data
+    private Dictionary<Vector3Int, Node> grid;
 
     private void Start()
     {
-        GenerateGrid(); // Build initial walkability grid
+        // Generate the grid at startup
+        RegenerateGrid();
     }
 
-    // Scans the walkable tilemap and marks each tile as walkable or not based on obstacle presence
-    private void GenerateGrid()
+    /// <summary>
+    /// Rebuilds the walkability grid by scanning the walkable tilemap and obstacle maps.
+    /// Called at startup and whenever obstacles are changed (e.g., removed).
+    /// </summary>
+    public void RegenerateGrid()
     {
+        grid = new Dictionary<Vector3Int, Node>();
+
+        // Expand bounds slightly to ensure surrounding area is covered
         BoundsInt bounds = walkableTilemap.cellBounds;
+        bounds.xMin -= 2;
+        bounds.yMin -= 2;
+        bounds.xMax += 2;
+        bounds.yMax += 2;
+
         foreach (var pos in bounds.allPositionsWithin)
         {
-            bool isWalkable = walkableTilemap.HasTile(pos) && !IsObstacle(pos);
-            grid[pos] = new Node(pos, isWalkable);
+            bool walkable = walkableTilemap.HasTile(pos) && !IsObstacle(pos);
+            grid[pos] = new Node(pos, walkable);
         }
     }
 
-    // Clears and rebuilds the grid, useful when obstacles are added/removed at runtime
-    public void RegenerateGrid()
-    {
-        grid.Clear();
-        GenerateGrid();
-    }
-
-    // Checks all obstacle tilemaps to determine if a tile is blocked
+    /// <summary>
+    /// Checks all obstacle tilemaps to determine if a tile at the given position is blocked.
+    /// </summary>
     private bool IsObstacle(Vector3Int position)
     {
-        foreach (Tilemap obstacleTilemap in obstacleTilemaps)
+        foreach (var tilemap in obstacleTilemaps)
         {
-            if (obstacleTilemap.HasTile(position)) return true;
+            if (tilemap.HasTile(position)) return true;
         }
         return false;
     }
 
-    // Returns a path using A* algorithm from start to target, or null if no path found
-    public List<Vector3Int> FindPath(Vector3Int start, Vector3Int target)
+    /// <summary>
+    /// Finds a path using the A* algorithm from the start to the end tile.
+    /// </summary>
+    public List<Vector3Int> FindPath(Vector3Int start, Vector3Int end)
     {
-        if (!grid.ContainsKey(target) || !grid[target].isWalkable) return null;
+        // Abort if start or end are not valid walkable tiles
+        if (!grid.ContainsKey(end) || !grid[end].isWalkable) return null;
+        if (!grid.ContainsKey(start) || !grid[start].isWalkable) return null;
 
-        List<Node> openList = new List<Node> { grid[start] }; // List of nodes to evaluate
-        HashSet<Node> closedList = new HashSet<Node>(); // List of nodes already evaluated
+        List<Node> openList = new List<Node> { grid[start] }; // Nodes to be evaluated
+        HashSet<Node> closedSet = new HashSet<Node>();        // Nodes already evaluated
 
-        foreach (Node node in grid.Values)
+        // Reset cost values
+        foreach (var node in grid.Values)
         {
             node.gCost = int.MaxValue;
+            node.hCost = 0;
             node.parent = null;
         }
 
-        grid[start].gCost = 0;
-        grid[start].hCost = GetDistance(start, target);
-        grid[start].CalculateFCost();
+        // Initialize start node
+        Node startNode = grid[start];
+        startNode.gCost = 0;
+        startNode.hCost = GetDistance(start, end);
+        startNode.CalculateFCost();
 
         while (openList.Count > 0)
         {
-            Node currentNode = GetLowestFCostNode(openList);
+            // Select node with lowest fCost
+            Node current = GetLowestFCostNode(openList);
 
-            if (currentNode.position == target)
-                return RetracePath(grid[start], currentNode);
+            // Path complete
+            if (current.position == end)
+                return RetracePath(startNode, current);
 
-            openList.Remove(currentNode);
-            closedList.Add(currentNode);
+            openList.Remove(current);
+            closedSet.Add(current);
 
-            foreach (Vector3Int neighborPos in GetNeighbors(currentNode.position))
+            // Check valid neighbors
+            foreach (Vector3Int neighborPos in GetNeighbors(current.position))
             {
                 if (!grid.ContainsKey(neighborPos)) continue;
 
                 Node neighbor = grid[neighborPos];
-                if (!neighbor.isWalkable || closedList.Contains(neighbor)) continue;
 
-                int tentativeGCost = currentNode.gCost + GetDistance(currentNode.position, neighbor.position);
+                if (!neighbor.isWalkable || closedSet.Contains(neighbor)) continue;
+
+                int tentativeGCost = current.gCost + GetDistance(current.position, neighbor.position);
                 if (tentativeGCost < neighbor.gCost)
                 {
                     neighbor.gCost = tentativeGCost;
-                    neighbor.hCost = GetDistance(neighbor.position, target);
+                    neighbor.hCost = GetDistance(neighbor.position, end);
                     neighbor.CalculateFCost();
-                    neighbor.parent = currentNode;
+                    neighbor.parent = current;
 
-                    if (!openList.Contains(neighbor)) openList.Add(neighbor);
+                    if (!openList.Contains(neighbor))
+                        openList.Add(neighbor);
                 }
             }
         }
 
-        return null; // Return null if path couldn't be found
+        // No valid path found
+        return null;
     }
 
-    // Traces the final path from target to start by walking backwards through parent nodes
+    /// <summary>
+    /// Reconstructs the final path by backtracking from the end node to the start node.
+    /// </summary>
     private List<Vector3Int> RetracePath(Node start, Node end)
     {
         List<Vector3Int> path = new List<Vector3Int>();
-        Node currentNode = end;
+        Node current = end;
 
-        while (currentNode != start)
+        while (current != start)
         {
-            path.Add(currentNode.position);
-            currentNode = currentNode.parent;
+            path.Add(current.position);
+            current = current.parent;
         }
 
-        path.Reverse(); // Reverse so it starts from origin
+        path.Reverse(); // Reverse to get path from start to end
         return path;
     }
 
-    // Selects the node in the list with the lowest total cost (fCost)
+    /// <summary>
+    /// Gets the node with the lowest fCost from a list of nodes.
+    /// </summary>
     private Node GetLowestFCostNode(List<Node> nodes)
     {
         Node lowest = nodes[0];
         foreach (var node in nodes)
         {
-            if (node.fCost < lowest.fCost) lowest = node;
+            if (node.fCost < lowest.fCost)
+                lowest = node;
         }
         return lowest;
     }
 
-    // Heuristic cost estimate using diagonal-friendly max difference
+    /// <summary>
+    /// Heuristic cost estimate between two tiles (Chebyshev distance).
+    /// </summary>
     private int GetDistance(Vector3Int a, Vector3Int b)
     {
         int dx = Mathf.Abs(a.x - b.x);
         int dy = Mathf.Abs(a.y - b.y);
-        return 10 * Mathf.Max(dx, dy); // Diagonal movement weight
+        return 10 * Mathf.Max(dx, dy); // Diagonal-friendly distance
     }
 
-    // Returns all 8-connected neighbors (including diagonals)
+    /// <summary>
+    /// Returns 4-directional neighbors of a tile (no diagonals).
+    /// </summary>
     private List<Vector3Int> GetNeighbors(Vector3Int pos)
     {
         return new List<Vector3Int>
         {
-            pos + new Vector3Int(1, 0, 0),
-            pos + new Vector3Int(-1, 0, 0),
-            pos + new Vector3Int(0, 1, 0),
-            pos + new Vector3Int(0, -1, 0),
-            pos + new Vector3Int(1, 1, 0),
-            pos + new Vector3Int(-1, -1, 0),
-            pos + new Vector3Int(-1, 1, 0),
-            pos + new Vector3Int(1, -1, 0)
+            pos + Vector3Int.right,
+            pos + Vector3Int.left,
+            pos + Vector3Int.up,
+            pos + Vector3Int.down
         };
     }
 }
 
-// Node class used for pathfinding grid
+//
+// Node: Represents a single tile in the pathfinding grid.
+//
 public class Node
 {
-    public Vector3Int position; // Tile position on grid
-    public bool isWalkable; // Whether the tile is walkable
-    public int gCost, hCost, fCost; // Cost values used by A* algorithm
-    public Node parent; // Parent node used for path retracing
+    public Vector3Int position;  // Tile position on the grid
+    public bool isWalkable;      // Can the player move here?
+    public int gCost, hCost, fCost; // A* cost values
+    public Node parent;          // Back-reference for path retracing
 
     public Node(Vector3Int pos, bool walkable)
     {
@@ -162,9 +192,6 @@ public class Node
         isWalkable = walkable;
     }
 
-    // fCost = gCost + hCost
-    public void CalculateFCost()
-    {
-        fCost = gCost + hCost;
-    }
+    // fCost is total estimated cost: gCost (so far) + hCost (estimate to goal)
+    public void CalculateFCost() => fCost = gCost + hCost;
 }
