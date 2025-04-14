@@ -18,6 +18,8 @@ public class Pathfinder : MonoBehaviour
     {
         // Generate the grid at startup
         RegenerateGrid();
+        Debug.Log("Grid regenerated.");
+
     }
 
     /// <summary>
@@ -28,8 +30,16 @@ public class Pathfinder : MonoBehaviour
     {
         grid = new Dictionary<Vector3Int, Node>();
 
-        // Expand bounds slightly to ensure surrounding area is covered
+        // Get combined bounds of walkable and obstacle tilemaps
         BoundsInt bounds = walkableTilemap.cellBounds;
+        foreach (var tilemap in obstacleTilemaps)
+        {
+            bounds.xMin = Mathf.Min(bounds.xMin, tilemap.cellBounds.xMin);
+            bounds.yMin = Mathf.Min(bounds.yMin, tilemap.cellBounds.yMin);
+            bounds.xMax = Mathf.Max(bounds.xMax, tilemap.cellBounds.xMax);
+            bounds.yMax = Mathf.Max(bounds.yMax, tilemap.cellBounds.yMax);
+        }
+
         bounds.xMin -= 2;
         bounds.yMin -= 2;
         bounds.xMax += 2;
@@ -39,20 +49,45 @@ public class Pathfinder : MonoBehaviour
         {
             bool walkable = walkableTilemap.HasTile(pos) && !IsObstacle(pos);
             grid[pos] = new Node(pos, walkable);
+
+            if (!walkable)
+            {
+                Debug.Log($"Blocked tile at {pos} due to obstacle");
+            }
         }
     }
 
-    /// <summary>
-    /// Checks all obstacle tilemaps to determine if a tile at the given position is blocked.
-    /// </summary>
+
     private bool IsObstacle(Vector3Int position)
     {
         foreach (var tilemap in obstacleTilemaps)
         {
-            if (tilemap.HasTile(position)) return true;
+            if (tilemap.HasTile(position))
+            {
+                Debug.Log($"Obstacle found at {position} on {tilemap.name}");
+                return true;
+            }
         }
         return false;
     }
+
+
+    
+    private void OnDrawGizmos()
+    {
+        if (grid == null) return;
+
+        Gizmos.color = Color.red;
+        foreach (var node in grid.Values)
+        {
+            if (!node.isWalkable)
+            {
+                Vector3 world = walkableTilemap.GetCellCenterWorld(node.position);
+                Gizmos.DrawWireCube(world, new Vector3(1f, 1f, 0f));
+            }
+        }
+    }
+
 
     /// <summary>
     /// Finds a path using the A* algorithm from the start to the end tile.

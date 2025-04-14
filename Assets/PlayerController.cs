@@ -41,6 +41,12 @@ public class PlayerController : MonoBehaviour
         Vector3 mouseWorld = GetMouseWorldPosition();
         Vector3Int hoveredCell = walkableTilemap.WorldToCell(mouseWorld);
 
+        if (Input.GetKeyDown(KeyCode.T))
+        {
+            Vector3Int testTile = new Vector3Int(0, 0, 0); // Change to where you know a tree is
+            Debug.Log($"Tree at (0,0,0)? {treeTileMap.HasTile(testTile)}");
+        }
+
         HandleTileHighlighting(hoveredCell); // Update hover highlight
 
         if (Input.GetMouseButtonDown(0))
