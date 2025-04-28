@@ -206,7 +206,11 @@ public class Pathfinder : MonoBehaviour
             pos + Vector3Int.right,
             pos + Vector3Int.left,
             pos + Vector3Int.up,
-            pos + Vector3Int.down
+            pos + Vector3Int.down,
+            pos + new Vector3Int(1, 1, 0),
+            pos + new Vector3Int(1, -1, 0),
+            pos + new Vector3Int(-1, 1, 0),
+            pos + new Vector3Int(-1, -1, 0)
         };
     }
 }
