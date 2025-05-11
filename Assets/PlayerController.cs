@@ -23,6 +23,9 @@ public class PlayerController : MonoBehaviour
     private Vector3Int? currentHighlightedTile = null;
     private Vector3Int pendingBreakTile;
     private bool isBreakingObstacle = false;
+    private Vector3Int? lastTreeTileUnderPlayer = null;
+    private List<Vector3Int> lastFadedTreeTiles = new List<Vector3Int>();
+
 
     private void Start()
     {
@@ -198,6 +201,8 @@ public class PlayerController : MonoBehaviour
             currentPath.Clear();
             if (pathLine != null)
                 pathLine.positionCount = 0;
+
+            HandleTreeTransparency();
             return;
         }
 
@@ -231,6 +236,38 @@ public class PlayerController : MonoBehaviour
         for (int i = 0; i < currentPath.Count; i++)
         {
             pathLine.SetPosition(i, walkableTilemap.GetCellCenterWorld(currentPath[i]));
+        }
+    }
+
+    private void HandleTreeTransparency()
+    {
+        // Reset old faded tiles
+        foreach (var tilePos in lastFadedTreeTiles)
+        {
+            if (treeTileMap.HasTile(tilePos))
+            {
+                treeTileMap.SetTileFlags(tilePos, TileFlags.None);
+                treeTileMap.SetColor(tilePos, Color.white);
+            }
+        }
+        lastFadedTreeTiles.Clear();
+
+        Vector3Int playerCell = treeTileMap.WorldToCell(transform.position);
+
+        // Check a 3x3 grid around the player
+        for (int x = -1; x <= 1; x++)
+        {
+            for (int y = -1; y <= 2; y++) // extend above player
+            {
+                Vector3Int checkCell = playerCell + new Vector3Int(x, y, 0);
+
+                if (treeTileMap.HasTile(checkCell))
+                {
+                    treeTileMap.SetTileFlags(checkCell, TileFlags.None);
+                    treeTileMap.SetColor(checkCell, new Color(1f, 1f, 1f, 0.4f));
+                    lastFadedTreeTiles.Add(checkCell);
+                }
+            }
         }
     }
 }
