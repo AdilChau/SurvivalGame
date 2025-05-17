@@ -9,7 +9,6 @@ public class PlayerController : MonoBehaviour
     public Tilemap walkableTilemap;
     public Tilemap treeTileMap;
     public Tilemap stoneTileMap;
-    public Tilemap treeBlockerTileMap;
 
     [Header("Tile References")]
     public TileBase defaultGrassTile;
@@ -234,9 +233,6 @@ public class PlayerController : MonoBehaviour
 
         if (stoneTileMap.HasTile(tile))
             stoneTileMap.SetTile(tile, null);
-
-        if (treeBlockerTileMap.HasTile(tile))
-            treeBlockerTileMap.SetTile(tile, null);
 
         if (treeRemoved && !walkableTilemap.HasTile(tile) && defaultGrassTile != null)
             walkableTilemap.SetTile(tile, defaultGrassTile);

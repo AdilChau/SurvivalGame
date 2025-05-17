@@ -37,9 +37,34 @@ public class Pathfinder : MonoBehaviour
             grid[pos] = new Node(pos, walkable);
 
             if (!walkable)
-                Debug.Log($"Blocked tile at {pos} due to obstacle");
+            {
+                foreach (var tilemap in obstacleTilemaps)
+                {
+                    bool isTreeMap = tilemap.name.ToLower().Contains("tree");
+                    bool tileHere = tilemap.HasTile(pos);
+                    bool tileAbove = tilemap.HasTile(pos + Vector3Int.up);
+
+                    Debug.Log($"[DEBUG] Blocked: {pos} | Map: {tilemap.name} | IsTreeMap: {isTreeMap} | Tile here: {tileHere} | Tile above: {tileAbove}");
+
+                    if (isTreeMap && tileHere && tileAbove)
+                    {
+                        Debug.Log($"✅ Tree trunk correctly blocked at {pos} because a canopy tile exists above.");
+                    }
+                    else if (isTreeMap && tileHere && !tileAbove)
+                    {
+                        Debug.Log($"⚠️ Trunk tile found at {pos}, but no canopy above — might be orphaned or partial tree.");
+                    }
+                    else if (isTreeMap && !tileHere && tileAbove)
+                    {
+                        Debug.Log($"👀 Canopy tile above {pos}, but no trunk below — unexpected tree structure?");
+                    }
+                }
+            }
         }
+
+        Debug.Log("✅ Grid regeneration complete.");
     }
+
 
     /// <summary>
     /// Returns expanded tile bounds covering all relevant tilemaps.
@@ -72,24 +97,36 @@ public class Pathfinder : MonoBehaviour
     {
         foreach (var tilemap in obstacleTilemaps)
         {
-            bool isTreeMap = tilemap.name.ToLower().Contains("tree");
-
-            if (!tilemap.HasTile(position)) continue;
-
-            if (isTreeMap)
+            // Only handle trees separately
+            if (tilemap.name.ToLower().Contains("tree"))
             {
-                Vector3Int above = position + Vector3Int.up;
-                if (!tilemap.HasTile(above))
-                    return true; // Tree trunk blocks; canopy doesn't
+                if (tilemap.HasTile(position))
+                {
+                    Vector3Int above = position + Vector3Int.up;
+                    if (tilemap.HasTile(above))
+                    {
+                        // This is the trunk — block it
+                        return true;
+                    }
+
+                    // Canopy or single tile — don't block
+                    return false;
+                }
             }
             else
             {
-                return true; // Non-tree obstacles block by default
+                // Default: anything else (like stone) blocks if tile exists
+                if (tilemap.HasTile(position))
+                {
+                    return true;
+                }
             }
         }
 
         return false;
     }
+
+
 
     private void OnDrawGizmos()
     {
@@ -105,6 +142,17 @@ public class Pathfinder : MonoBehaviour
                 Gizmos.DrawWireCube(world, new Vector3(1f, 1f, 0f));
             }
         }
+
+        Gizmos.color = Color.cyan;
+        foreach (var kvp in grid)
+        {
+            if (kvp.Value.isWalkable == false)
+            {
+                Vector3 world = walkableTilemap.GetCellCenterWorld(kvp.Key);
+                Gizmos.DrawCube(world, Vector3.one * 0.2f);
+            }
+        }
+
     }
 
     /// <summary>
