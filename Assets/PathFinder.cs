@@ -16,10 +16,8 @@ public class Pathfinder : MonoBehaviour
 
     private void Start()
     {
-        // Generate the grid at startup
-        RegenerateGrid();
+        RegenerateGrid();  // Generate the grid at startup
         Debug.Log("Grid regenerated.");
-
     }
 
     /// <summary>
@@ -30,14 +28,33 @@ public class Pathfinder : MonoBehaviour
     {
         grid = new Dictionary<Vector3Int, Node>();
 
-        // Get combined bounds of walkable and obstacle tilemaps
+        // Compute overall bounds across walkable and obstacle tilemaps
+        BoundsInt bounds = GetExpandedTileBounds();
+
+        foreach (Vector3Int pos in bounds.allPositionsWithin)
+        {
+            bool walkable = walkableTilemap.HasTile(pos) && !IsObstacle(pos);
+            grid[pos] = new Node(pos, walkable);
+
+            if (!walkable)
+                Debug.Log($"Blocked tile at {pos} due to obstacle");
+        }
+    }
+
+    /// <summary>
+    /// Returns expanded tile bounds covering all relevant tilemaps.
+    /// </summary>
+    private BoundsInt GetExpandedTileBounds()
+    {
         BoundsInt bounds = walkableTilemap.cellBounds;
+
         foreach (var tilemap in obstacleTilemaps)
         {
-            bounds.xMin = Mathf.Min(bounds.xMin, tilemap.cellBounds.xMin);
-            bounds.yMin = Mathf.Min(bounds.yMin, tilemap.cellBounds.yMin);
-            bounds.xMax = Mathf.Max(bounds.xMax, tilemap.cellBounds.xMax);
-            bounds.yMax = Mathf.Max(bounds.yMax, tilemap.cellBounds.yMax);
+            BoundsInt obstacleBounds = tilemap.cellBounds;
+            bounds.xMin = Mathf.Min(bounds.xMin, obstacleBounds.xMin);
+            bounds.yMin = Mathf.Min(bounds.yMin, obstacleBounds.yMin);
+            bounds.xMax = Mathf.Max(bounds.xMax, obstacleBounds.xMax);
+            bounds.yMax = Mathf.Max(bounds.yMax, obstacleBounds.yMax);
         }
 
         bounds.xMin -= 2;
@@ -45,39 +62,41 @@ public class Pathfinder : MonoBehaviour
         bounds.xMax += 2;
         bounds.yMax += 2;
 
-        foreach (var pos in bounds.allPositionsWithin)
-        {
-            bool walkable = walkableTilemap.HasTile(pos) && !IsObstacle(pos);
-            grid[pos] = new Node(pos, walkable);
-
-            if (!walkable)
-            {
-                Debug.Log($"Blocked tile at {pos} due to obstacle");
-            }
-        }
+        return bounds;
     }
 
-
+    /// <summary>
+    /// Checks if a given tile position is obstructed by any obstacle tilemap.
+    /// </summary>
     private bool IsObstacle(Vector3Int position)
     {
         foreach (var tilemap in obstacleTilemaps)
         {
-            if (tilemap.HasTile(position))
+            bool isTreeMap = tilemap.name.ToLower().Contains("tree");
+
+            if (!tilemap.HasTile(position)) continue;
+
+            if (isTreeMap)
             {
-                Debug.Log($"Obstacle found at {position} on {tilemap.name}");
-                return true;
+                Vector3Int above = position + Vector3Int.up;
+                if (!tilemap.HasTile(above))
+                    return true; // Tree trunk blocks; canopy doesn't
+            }
+            else
+            {
+                return true; // Non-tree obstacles block by default
             }
         }
+
         return false;
     }
 
-
-    
     private void OnDrawGizmos()
     {
         if (grid == null) return;
 
         Gizmos.color = Color.red;
+
         foreach (var node in grid.Values)
         {
             if (!node.isWalkable)
@@ -88,52 +107,40 @@ public class Pathfinder : MonoBehaviour
         }
     }
 
-
     /// <summary>
     /// Finds a path using the A* algorithm from the start to the end tile.
     /// </summary>
     public List<Vector3Int> FindPath(Vector3Int start, Vector3Int end)
     {
-        // Abort if start or end are not valid walkable tiles
-        if (!grid.ContainsKey(end) || !grid[end].isWalkable) return null;
-        if (!grid.ContainsKey(start) || !grid[start].isWalkable) return null;
+        if (!IsValidPosition(start) || !IsValidPosition(end)) return null;
 
-        List<Node> openList = new List<Node> { grid[start] }; // Nodes to be evaluated
-        HashSet<Node> closedSet = new HashSet<Node>();        // Nodes already evaluated
+        List<Node> openList = new List<Node> { grid[start] };
+        HashSet<Node> closedSet = new HashSet<Node>();
 
-        // Reset cost values
-        foreach (var node in grid.Values)
-        {
-            node.gCost = int.MaxValue;
-            node.hCost = 0;
-            node.parent = null;
-        }
+        InitializePathfindingCosts();
 
-        // Initialize start node
         Node startNode = grid[start];
+        Node endNode = grid[end];
+
         startNode.gCost = 0;
         startNode.hCost = GetDistance(start, end);
         startNode.CalculateFCost();
 
         while (openList.Count > 0)
         {
-            // Select node with lowest fCost
             Node current = GetLowestFCostNode(openList);
 
-            // Path complete
             if (current.position == end)
                 return RetracePath(startNode, current);
 
             openList.Remove(current);
             closedSet.Add(current);
 
-            // Check valid neighbors
             foreach (Vector3Int neighborPos in GetNeighbors(current.position))
             {
                 if (!grid.ContainsKey(neighborPos)) continue;
 
                 Node neighbor = grid[neighborPos];
-
                 if (!neighbor.isWalkable || closedSet.Contains(neighbor)) continue;
 
                 int tentativeGCost = current.gCost + GetDistance(current.position, neighbor.position);
@@ -150,8 +157,28 @@ public class Pathfinder : MonoBehaviour
             }
         }
 
-        // No valid path found
-        return null;
+        return null; // No valid path found
+    }
+
+    /// <summary>
+    /// Validates whether the tile exists and is walkable.
+    /// </summary>
+    private bool IsValidPosition(Vector3Int position)
+    {
+        return grid.ContainsKey(position) && grid[position].isWalkable;
+    }
+
+    /// <summary>
+    /// Resets pathfinding costs for all nodes in the grid.
+    /// </summary>
+    private void InitializePathfindingCosts()
+    {
+        foreach (var node in grid.Values)
+        {
+            node.gCost = int.MaxValue;
+            node.hCost = 0;
+            node.parent = null;
+        }
     }
 
     /// <summary>
@@ -168,7 +195,7 @@ public class Pathfinder : MonoBehaviour
             current = current.parent;
         }
 
-        path.Reverse(); // Reverse to get path from start to end
+        path.Reverse();
         return path;
     }
 
@@ -177,13 +204,13 @@ public class Pathfinder : MonoBehaviour
     /// </summary>
     private Node GetLowestFCostNode(List<Node> nodes)
     {
-        Node lowest = nodes[0];
-        foreach (var node in nodes)
+        Node best = nodes[0];
+        foreach (Node node in nodes)
         {
-            if (node.fCost < lowest.fCost)
-                lowest = node;
+            if (node.fCost < best.fCost)
+                best = node;
         }
-        return lowest;
+        return best;
     }
 
     /// <summary>
@@ -193,11 +220,11 @@ public class Pathfinder : MonoBehaviour
     {
         int dx = Mathf.Abs(a.x - b.x);
         int dy = Mathf.Abs(a.y - b.y);
-        return 10 * Mathf.Max(dx, dy); // Diagonal-friendly distance
+        return 10 * Mathf.Max(dx, dy); // Diagonal-friendly
     }
 
     /// <summary>
-    /// Returns 4-directional neighbors of a tile (no diagonals).
+    /// Returns 8-directional neighbors of a tile.
     /// </summary>
     private List<Vector3Int> GetNeighbors(Vector3Int pos)
     {
@@ -213,11 +240,16 @@ public class Pathfinder : MonoBehaviour
             pos + new Vector3Int(-1, -1, 0)
         };
     }
+
+    /// <summary>
+    /// Exposes the grid for debugging purposes.
+    /// </summary>
+    public Dictionary<Vector3Int, Node> DebugGetGrid() => grid;
 }
 
-//
-// Node: Represents a single tile in the pathfinding grid.
-//
+/// <summary>
+/// Node: Represents a single tile in the pathfinding grid.
+/// </summary>
 public class Node
 {
     public Vector3Int position;  // Tile position on the grid
@@ -231,6 +263,5 @@ public class Node
         isWalkable = walkable;
     }
 
-    // fCost is total estimated cost: gCost (so far) + hCost (estimate to goal)
     public void CalculateFCost() => fCost = gCost + hCost;
 }

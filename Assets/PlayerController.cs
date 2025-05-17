@@ -9,6 +9,10 @@ public class PlayerController : MonoBehaviour
     public Tilemap walkableTilemap;
     public Tilemap treeTileMap;
     public Tilemap stoneTileMap;
+    public Tilemap treeBlockerTileMap;
+
+    [Header("Tile References")]
+    public TileBase defaultGrassTile;
 
     [Header("Pathfinding")]
     public Pathfinder pathfinder;
@@ -23,9 +27,8 @@ public class PlayerController : MonoBehaviour
     private Vector3Int? currentHighlightedTile = null;
     private Vector3Int pendingBreakTile;
     private bool isBreakingObstacle = false;
-    private Vector3Int? lastTreeTileUnderPlayer = null;
-    private List<Vector3Int> lastFadedTreeTiles = new List<Vector3Int>();
 
+    private List<Vector3Int> lastFadedTreeTiles = new List<Vector3Int>();
 
     private void Start()
     {
@@ -54,15 +57,21 @@ public class PlayerController : MonoBehaviour
         MoveAlongPath();
     }
 
+    #region Input & Highlighting
+
+    /// <summary>
+    /// Converts mouse screen position to the corresponding cell on the tilemap.
+    /// </summary>
     private Vector3Int GetClickedCell()
     {
-        Vector3 mouseScreenPos = Input.mousePosition;
-        Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(mouseScreenPos);
+        Vector3 mouseWorldPos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
         mouseWorldPos.z = 0f;
-        Vector3Int cellPos = walkableTilemap.WorldToCell(mouseWorldPos);
-        return cellPos;
+        return walkableTilemap.WorldToCell(mouseWorldPos);
     }
 
+    /// <summary>
+    /// Highlights hovered tiles or trees.
+    /// </summary>
     private void HandleTileHighlighting(Vector3Int tile)
     {
         if (tile == currentHighlightedTile) return;
@@ -70,7 +79,13 @@ public class PlayerController : MonoBehaviour
         if (currentHighlightedTile.HasValue)
             ResetHighlight(currentHighlightedTile.Value);
 
-        if (treeTileMap.HasTile(tile) || stoneTileMap.HasTile(tile) || walkableTilemap.HasTile(tile))
+        Vector3Int? root = FindTreeRootNear(tile);
+        if (root.HasValue)
+        {
+            HighlightEntireTree(root.Value);
+            currentHighlightedTile = root.Value;
+        }
+        else if (stoneTileMap.HasTile(tile) || walkableTilemap.HasTile(tile))
         {
             HighlightTile(tile);
             currentHighlightedTile = tile;
@@ -79,6 +94,17 @@ public class PlayerController : MonoBehaviour
         {
             currentHighlightedTile = null;
         }
+    }
+
+    private void HighlightEntireTree(Vector3Int root)
+    {
+        for (int x = -1; x <= 1; x++)
+            for (int y = -1; y <= 1; y++)
+            {
+                Vector3Int check = root + new Vector3Int(x, y, 0);
+                if (treeTileMap.HasTile(check))
+                    ApplyHighlight(treeTileMap, check);
+            }
     }
 
     private void HighlightTile(Vector3Int pos)
@@ -90,9 +116,22 @@ public class PlayerController : MonoBehaviour
 
     private void ResetHighlight(Vector3Int pos)
     {
-        if (treeTileMap.HasTile(pos)) ResetTileColor(treeTileMap, pos);
-        if (stoneTileMap.HasTile(pos)) ResetTileColor(stoneTileMap, pos);
-        if (walkableTilemap.HasTile(pos)) ResetTileColor(walkableTilemap, pos);
+        Vector3Int? root = FindTreeRootNear(pos);
+        if (root.HasValue)
+        {
+            for (int x = -1; x <= 1; x++)
+                for (int y = -1; y <= 1; y++)
+                {
+                    Vector3Int check = root.Value + new Vector3Int(x, y, 0);
+                    if (treeTileMap.HasTile(check))
+                        ResetTileColor(treeTileMap, check);
+                }
+        }
+        else
+        {
+            if (stoneTileMap.HasTile(pos)) ResetTileColor(stoneTileMap, pos);
+            if (walkableTilemap.HasTile(pos)) ResetTileColor(walkableTilemap, pos);
+        }
     }
 
     private void ApplyHighlight(Tilemap map, Vector3Int pos)
@@ -107,38 +146,67 @@ public class PlayerController : MonoBehaviour
         map.SetColor(pos, Color.white);
     }
 
+    #endregion
+
+    #region Breaking Obstacles
+
+    /// <summary>
+    /// Initiates walking toward a tree/stone to remove it.
+    /// </summary>
     private void TryInitiateBreak(Vector3Int target)
     {
-        if (treeTileMap.HasTile(target) || stoneTileMap.HasTile(target))
+        Vector3Int? root = FindTreeRootNear(target);
+
+        if (root.HasValue || stoneTileMap.HasTile(target))
         {
             Vector3Int playerPos = walkableTilemap.WorldToCell(transform.position);
-            Vector3Int? adjacent = GetNearestWalkableAdjacent(target, playerPos);
+            Vector3Int interactionTile = root ?? target;
+
+            Vector3Int? adjacent = GetNearestWalkableAdjacent(interactionTile, playerPos);
 
             if (adjacent.HasValue)
             {
                 SetPath(adjacent.Value);
-                pendingBreakTile = target;
+                pendingBreakTile = interactionTile;
                 isBreakingObstacle = true;
             }
         }
     }
 
+    /// <summary>
+    /// Searches a 3x3 grid around the clicked tile for a tree root.
+    /// </summary>
+    private Vector3Int? FindTreeRootNear(Vector3Int clickedCell)
+    {
+        for (int x = -1; x <= 1; x++)
+            for (int y = -1; y <= 1; y++)
+            {
+                Vector3Int check = clickedCell + new Vector3Int(x, y, 0);
+                if (treeTileMap.HasTile(check))
+                    return check;
+            }
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the nearest walkable adjacent tile to interact with the obstacle.
+    /// </summary>
     private Vector3Int? GetNearestWalkableAdjacent(Vector3Int target, Vector3Int player)
     {
-        List<Vector3Int> neighbors = new List<Vector3Int>
+        List<Vector3Int> directions = new List<Vector3Int>
         {
-            target + Vector3Int.up,
-            target + Vector3Int.down,
-            target + Vector3Int.left,
-            target + Vector3Int.right
+            Vector3Int.up, Vector3Int.down, Vector3Int.left, Vector3Int.right
         };
 
         Vector3Int? best = null;
         int bestDist = int.MaxValue;
 
-        foreach (var cell in neighbors)
+        foreach (var dir in directions)
         {
-            if (walkableTilemap.HasTile(cell) && !treeTileMap.HasTile(cell) && !stoneTileMap.HasTile(cell))
+            Vector3Int cell = target + dir;
+            if (walkableTilemap.HasTile(cell) &&
+                !treeTileMap.HasTile(cell) &&
+                !stoneTileMap.HasTile(cell))
             {
                 int dist = Mathf.Abs(cell.x - player.x) + Mathf.Abs(cell.y - player.y);
                 if (dist < bestDist)
@@ -148,6 +216,7 @@ public class PlayerController : MonoBehaviour
                 }
             }
         }
+
         return best;
     }
 
@@ -155,11 +224,29 @@ public class PlayerController : MonoBehaviour
     {
         yield return new WaitForSeconds(0.5f);
 
-        if (treeTileMap.HasTile(tile)) treeTileMap.SetTile(tile, null);
-        if (stoneTileMap.HasTile(tile)) stoneTileMap.SetTile(tile, null);
+        bool treeRemoved = false;
+
+        if (treeTileMap.HasTile(tile))
+        {
+            treeTileMap.SetTile(tile, null);
+            treeRemoved = true;
+        }
+
+        if (stoneTileMap.HasTile(tile))
+            stoneTileMap.SetTile(tile, null);
+
+        if (treeBlockerTileMap.HasTile(tile))
+            treeBlockerTileMap.SetTile(tile, null);
+
+        if (treeRemoved && !walkableTilemap.HasTile(tile) && defaultGrassTile != null)
+            walkableTilemap.SetTile(tile, defaultGrassTile);
 
         pathfinder.RegenerateGrid();
     }
+
+    #endregion
+
+    #region Pathfinding & Movement
 
     private void SetPath(Vector3Int destination)
     {
@@ -167,24 +254,20 @@ public class PlayerController : MonoBehaviour
         List<Vector3Int> path = pathfinder.FindPath(start, destination);
 
         if (path == null || path.Count == 0)
-        {
             return;
-        }
 
         pathQueue.Clear();
-        currentPath.Clear();
         currentPath = new List<Vector3Int>(path);
 
         if (pathLine != null)
-            pathLine.positionCount = path.Count;
-
-        for (int i = 0; i < path.Count; i++)
         {
-            Vector3 world = walkableTilemap.GetCellCenterWorld(path[i]);
-            pathQueue.Enqueue(world);
-
-            if (pathLine != null)
+            pathLine.positionCount = path.Count;
+            for (int i = 0; i < path.Count; i++)
+            {
+                Vector3 world = walkableTilemap.GetCellCenterWorld(path[i]);
+                pathQueue.Enqueue(world);
                 pathLine.SetPosition(i, world);
+            }
         }
     }
 
@@ -199,8 +282,7 @@ public class PlayerController : MonoBehaviour
             }
 
             currentPath.Clear();
-            if (pathLine != null)
-                pathLine.positionCount = 0;
+            if (pathLine != null) pathLine.positionCount = 0;
 
             HandleTreeTransparency();
             return;
@@ -211,7 +293,7 @@ public class PlayerController : MonoBehaviour
 
         if (Vector3.Distance(transform.position, target) < 0.1f)
         {
-            transform.position = target; // Snap exactly
+            transform.position = target;
             pathQueue.Dequeue();
 
             if (currentPath.Count > 0)
@@ -223,25 +305,28 @@ public class PlayerController : MonoBehaviour
 
     private void UpdatePathLine()
     {
-        if (pathLine == null) return;
-
-        if (currentPath.Count == 0)
+        if (pathLine == null || currentPath.Count == 0)
         {
-            pathLine.positionCount = 0;
+            if (pathLine != null) pathLine.positionCount = 0;
             return;
         }
 
         pathLine.positionCount = currentPath.Count;
-
         for (int i = 0; i < currentPath.Count; i++)
         {
             pathLine.SetPosition(i, walkableTilemap.GetCellCenterWorld(currentPath[i]));
         }
     }
 
+    #endregion
+
+    #region Visual Feedback
+
+    /// <summary>
+    /// Makes tree tiles near the player semi-transparent for visibility.
+    /// </summary>
     private void HandleTreeTransparency()
     {
-        // Reset old faded tiles
         foreach (var tilePos in lastFadedTreeTiles)
         {
             if (treeTileMap.HasTile(tilePos))
@@ -250,24 +335,23 @@ public class PlayerController : MonoBehaviour
                 treeTileMap.SetColor(tilePos, Color.white);
             }
         }
+
         lastFadedTreeTiles.Clear();
 
         Vector3Int playerCell = treeTileMap.WorldToCell(transform.position);
 
-        // Check a 3x3 grid around the player
         for (int x = -1; x <= 1; x++)
-        {
-            for (int y = -1; y <= 2; y++) // extend above player
+            for (int y = -1; y <= 2; y++)
             {
-                Vector3Int checkCell = playerCell + new Vector3Int(x, y, 0);
-
-                if (treeTileMap.HasTile(checkCell))
+                Vector3Int check = playerCell + new Vector3Int(x, y, 0);
+                if (treeTileMap.HasTile(check))
                 {
-                    treeTileMap.SetTileFlags(checkCell, TileFlags.None);
-                    treeTileMap.SetColor(checkCell, new Color(1f, 1f, 1f, 0.4f));
-                    lastFadedTreeTiles.Add(checkCell);
+                    treeTileMap.SetTileFlags(check, TileFlags.None);
+                    treeTileMap.SetColor(check, new Color(1f, 1f, 1f, 0.4f));
+                    lastFadedTreeTiles.Add(check);
                 }
             }
-        }
     }
+
+    #endregion
 }
