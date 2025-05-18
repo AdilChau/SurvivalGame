@@ -9,6 +9,7 @@ public class PlayerController : MonoBehaviour
     public Tilemap walkableTilemap;
     public Tilemap treeTileMap;
     public Tilemap stoneTileMap;
+    public Tilemap treeBlockerTileMap;
 
     [Header("Tile References")]
     public TileBase defaultGrassTile;
@@ -159,7 +160,9 @@ public class PlayerController : MonoBehaviour
         if (root.HasValue || stoneTileMap.HasTile(target))
         {
             Vector3Int playerPos = walkableTilemap.WorldToCell(transform.position);
-            Vector3Int interactionTile = root ?? target;
+            Vector3Int interactionTile = root.HasValue ? root.Value : target;
+            pendingBreakTile = interactionTile;
+            Debug.Log($"[BREAK INIT] Targeting {interactionTile} as obstacle tile");
 
             Vector3Int? adjacent = GetNearestWalkableAdjacent(interactionTile, playerPos);
 
@@ -221,6 +224,7 @@ public class PlayerController : MonoBehaviour
 
     private IEnumerator BreakObstacleAfterDelay(Vector3Int tile)
     {
+        Debug.Log($"[BREAK] Starting obstacle break at {tile}");
         yield return new WaitForSeconds(0.5f);
 
         bool treeRemoved = false;
@@ -232,12 +236,27 @@ public class PlayerController : MonoBehaviour
         }
 
         if (stoneTileMap.HasTile(tile))
+        {
             stoneTileMap.SetTile(tile, null);
+        }
+
+        if (treeBlockerTileMap.HasTile(tile))
+        {
+            Debug.Log($"[BLOCKER REMOVAL] Removing invisible tile at {tile} from TreeBlockerTileMap.");
+            treeBlockerTileMap.SetTile(tile, null); // Remove the blocking tile
+        }
+        else
+        {
+            Debug.Log($"[BLOCKER REMOVAL] No blocker tile found at {tile} to remove.");
+        }
+
 
         if (treeRemoved && !walkableTilemap.HasTile(tile) && defaultGrassTile != null)
+        {
             walkableTilemap.SetTile(tile, defaultGrassTile);
+        }
 
-        pathfinder.RegenerateGrid();
+        pathfinder.RegenerateGrid(); // Refresh Pathfinding
     }
 
     #endregion

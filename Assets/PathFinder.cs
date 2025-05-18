@@ -98,7 +98,7 @@ public class Pathfinder : MonoBehaviour
         foreach (var tilemap in obstacleTilemaps)
         {
             // Only handle trees separately
-            if (tilemap.name.ToLower().Contains("tree"))
+            if (tilemap.name.ToLower() == "treetilemap")
             {
                 if (tilemap.HasTile(position))
                 {
