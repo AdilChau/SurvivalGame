@@ -37,10 +37,30 @@ public class PlayerController : MonoBehaviour
 
         if (pathLine != null)
             pathLine.positionCount = 0;
+
+        // 🔍 DEBUG: Print all existing blocker tiles in the grid
+        foreach (var pos in treeBlockerTileMap.cellBounds.allPositionsWithin)
+        {
+            if (treeBlockerTileMap.HasTile(pos))
+            {
+                Debug.Log($"[TREE BLOCKER] Blocker tile found at {pos}");
+            }
+        }
+
+        foreach (var pos in treeBlockerTileMap.cellBounds.allPositionsWithin)
+        {
+            if (treeBlockerTileMap.HasTile(pos))
+            {
+                Debug.Log($"[TREE BLOCKER] Blocker tile found at {pos} | Z = {pos.z}");
+            }
+        }
     }
 
     private void Update()
     {
+        Vector3Int hovered = walkableTilemap.WorldToCell(Camera.main.ScreenToWorldPoint(Input.mousePosition));
+        Debug.Log($"[HOVER] Mouse is over cell: {hovered}");
+        
         Vector3Int hoveredCell = GetClickedCell();
 
         HandleTileHighlighting(hoveredCell);
@@ -224,40 +244,77 @@ public class PlayerController : MonoBehaviour
 
     private IEnumerator BreakObstacleAfterDelay(Vector3Int tile)
     {
+        Debug.Log($"[TRACE] BreakObstacleAfterDelay is running from: {this.GetType().Name}");
         Debug.Log($"[BREAK] Starting obstacle break at {tile}");
+
         yield return new WaitForSeconds(0.5f);
 
         bool treeRemoved = false;
 
+        // Remove tree tile
         if (treeTileMap.HasTile(tile))
         {
             treeTileMap.SetTile(tile, null);
             treeRemoved = true;
+            Debug.Log($"[BREAK] Tree removed at {tile}");
         }
 
+        // Remove stone tile
         if (stoneTileMap.HasTile(tile))
         {
             stoneTileMap.SetTile(tile, null);
+            Debug.Log($"[BREAK] Stone removed at {tile}");
         }
 
-        if (treeBlockerTileMap.HasTile(tile))
+        // 🆕 DEBUG all blocker tile positions
+        Debug.Log("[BLOCKER VERIFY] Checking all blocker tile positions...");
+        foreach (var pos in treeBlockerTileMap.cellBounds.allPositionsWithin)
         {
-            Debug.Log($"[BLOCKER REMOVAL] Removing invisible tile at {tile} from TreeBlockerTileMap.");
-            treeBlockerTileMap.SetTile(tile, null); // Remove the blocking tile
+            if (treeBlockerTileMap.HasTile(pos))
+            {
+                Debug.Log($"[BLOCKER VERIFY] Tile exists at {pos}");
+            }
         }
-        else
+
+        // 🔍 Check nearby for blocker tiles
+        bool blockerRemoved = false;
+        Debug.Log($"[BLOCKER REMOVAL] Scanning for blocker tile near {tile}");
+
+        for (int x = -3; x <= 3; x++)
         {
-            Debug.Log($"[BLOCKER REMOVAL] No blocker tile found at {tile} to remove.");
+            for (int y = -3; y <= 3; y++)
+            {
+                Vector3Int check = tile + new Vector3Int(x, y, 0);
+                bool hasBlocker = treeBlockerTileMap.HasTile(check);
+                Debug.Log($"[BLOCKER REMOVAL] Checking {check}... Has tile? {hasBlocker}");
+
+                if (hasBlocker)
+                {
+                    treeBlockerTileMap.SetTile(check, null);
+                    Debug.Log($"[BLOCKER REMOVAL] ✅ Removed blocker at {check}");
+                    blockerRemoved = true;
+                }
+            }
         }
 
+        if (!blockerRemoved)
+        {
+            Debug.Log($"[BLOCKER REMOVAL] ❌ No blocker tile found in 3x3 area around {tile}");
+        }
 
+        // Restore ground tile
         if (treeRemoved && !walkableTilemap.HasTile(tile) && defaultGrassTile != null)
         {
             walkableTilemap.SetTile(tile, defaultGrassTile);
+            Debug.Log($"[GRASS RESTORE] Grass placed at {tile}");
         }
 
-        pathfinder.RegenerateGrid(); // Refresh Pathfinding
+        // Refresh pathfinding
+        pathfinder.RegenerateGrid();
     }
+
+
+
 
     #endregion
 
