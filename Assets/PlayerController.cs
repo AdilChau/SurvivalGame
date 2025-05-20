@@ -22,7 +22,7 @@ public class PlayerController : MonoBehaviour
     public LineRenderer pathLine;
 
     [Header("Movement")]
-    public float speed = 2f;
+    public float speed = 1.5f;
 
     private Queue<Vector3> pathQueue = new();
     private List<Vector3Int> currentPath = new();
