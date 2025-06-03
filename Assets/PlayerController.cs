@@ -30,9 +30,15 @@ public class PlayerController : MonoBehaviour
     private Vector3Int pendingBreakTile;
     private bool isBreakingObstacle = false;
     private List<Vector3Int> lastFadedTreeTiles = new();
+    private Animator animator;
+    private Vector3 lastPosition;
 
     private void Start()
     {
+        // Animation setup
+        animator = GetComponent<Animator>();
+        lastPosition = transform.position;
+
         // Automatically assign pathfinder if not manually set
         pathfinder ??= FindObjectOfType<Pathfinder>();
 
@@ -54,6 +60,7 @@ public class PlayerController : MonoBehaviour
             TryInitiateBreak(hoveredCell);
 
         MoveAlongPath();
+        HandleIdleAnimation();
     }
 
     #region Input & Highlighting
@@ -310,6 +317,16 @@ public class PlayerController : MonoBehaviour
 
             UpdatePathLine();
         }
+    }
+
+    /// <summary>
+    /// Handles the idle animation
+    /// <summary>
+    private void HandleIdleAnimation() 
+    {
+        bool isIdle = Vector3.Distance(transform.position, lastPosition) < 0.001f;
+        animator.SetBool("IsIdle", isIdle);
+        lastPosition = transform.position;
     }
 
     /// <summary>
