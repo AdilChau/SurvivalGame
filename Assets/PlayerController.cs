@@ -24,6 +24,9 @@ public class PlayerController : MonoBehaviour
     [Header("Movement")]
     public float speed = 1.5f;
 
+    [Header("Resource Drops")]
+    public GameObject stoneDropPrefab; // Prefab for dropped stone resources
+
     private Queue<Vector3> pathQueue = new();
     private List<Vector3Int> currentPath = new();
     private Vector3Int? currentHighlightedTile = null;
@@ -237,6 +240,13 @@ public class PlayerController : MonoBehaviour
         if (stoneTileMap.HasTile(tile))
         {
             stoneTileMap.SetTile(tile, null);
+
+            // Spawn resource drop
+            if (stoneDropPrefab != null)
+            {
+                Vector3 spawnPos = walkableTilemap.GetCellCenterWorld(tile);
+                Instantiate(stoneDropPrefab, spawnPos, Quaternion.identity);
+            }
         }
 
         Vector3Int blockerOffset = new(-2, -2, 0);

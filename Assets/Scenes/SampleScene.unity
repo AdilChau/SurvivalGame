@@ -345,6 +345,7 @@ MonoBehaviour:
   pathfinder: {fileID: 871325870}
   pathLine: {fileID: 307555629}
   speed: 5
+  stoneDropPrefab: {fileID: 8286000109993889829, guid: 4b197946a1056de4b8767aa4a4fcd699, type: 3}
 --- !u!212 &470730587
 SpriteRenderer:
   m_ObjectHideFlags: 0
@@ -2680,7 +2681,7 @@ MonoBehaviour:
   m_Intensity: 1
   m_LightVolumeIntensity: 1
   m_LightVolumeIntensityEnabled: 0
-  m_ApplyToSortingLayers: 0000000003d39a041bb55ef3b7c3278cb755ae54871d5dc94faa9a444b867502
+  m_ApplyToSortingLayers: 0000000003d39a041bb55ef3b7c3278cb755ae54871d5dc94faa9a444b86750255f84cfd
   m_LightCookieSprite: {fileID: 0}
   m_DeprecatedPointLightCookieSprite: {fileID: 0}
   m_LightOrder: 0
