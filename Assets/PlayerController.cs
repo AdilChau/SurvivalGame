@@ -26,6 +26,7 @@ public class PlayerController : MonoBehaviour
 
     [Header("Resource Drops")]
     public GameObject stoneDropPrefab; // Prefab for dropped stone resources
+    public GameObject woodDropPrefab; // Prefab for dropped wood resources
 
     private Queue<Vector3> pathQueue = new();
     private List<Vector3Int> currentPath = new();
@@ -235,6 +236,13 @@ public class PlayerController : MonoBehaviour
         {
             treeTileMap.SetTile(tile, null);
             treeRemoved = true;
+
+            // Spawn resource drop
+            if (woodDropPrefab != null)
+            {
+                Vector3 spawnPos = walkableTilemap.GetCellCenterWorld(tile);
+                Instantiate(woodDropPrefab, spawnPos, Quaternion.identity);
+            }
         }
 
         if (stoneTileMap.HasTile(tile))
